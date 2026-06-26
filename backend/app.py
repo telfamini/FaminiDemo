@@ -87,6 +87,9 @@ def connect_serial():
             with serial_lock:
                 if ser is None or not ser.is_open:
                     ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+                    # Flush garbage from ESP32 boot sequence
+                    time.sleep(2)
+                    ser.reset_input_buffer()
                     state["connected"] = True
                     print(f"[Serial] Connected → {SERIAL_PORT} @ {BAUD_RATE}")
         except serial.SerialException as e:
@@ -102,7 +105,8 @@ def read_serial():
             with serial_lock:
                 if ser and ser.is_open and ser.in_waiting > 0:
                     raw = ser.readline().decode("utf-8", errors="ignore").strip()
-                    if raw:
+                    # Only process complete JSON lines — skip boot messages and partial lines
+                    if raw and raw.startswith("{") and raw.endswith("}"):
                         _parse(raw)
         except Exception as e:
             print(f"[Read] {e}")
