@@ -1,0 +1,5 @@
+flask==3.0.3
+pyserial==3.5
+python-dotenv==1.0.1
+pymongo==4.7.2
+dnspython==2.6.1
