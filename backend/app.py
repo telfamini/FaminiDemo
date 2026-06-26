@@ -25,6 +25,7 @@ BAUD_RATE   = int(os.getenv("BAUD_RATE", 115200))
 
 ser         = None
 serial_lock = threading.Lock()
+write_lock  = threading.Lock()  # separate lock for sending commands
 
 # ── Auto logic thresholds ─────────────────────────────────────────────────────
 TOF_ALERT_MM      = 60     # buzzer triggers when TOF < 60 mm
@@ -84,10 +85,9 @@ def connect_serial():
     global ser
     while True:
         try:
-            with serial_lock:
+            with write_lock:
                 if ser is None or not ser.is_open:
                     ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-                    # Flush garbage from ESP32 boot sequence
                     time.sleep(2)
                     ser.reset_input_buffer()
                     state["connected"] = True
@@ -102,12 +102,11 @@ def read_serial():
     global ser
     while True:
         try:
-            with serial_lock:
-                if ser and ser.is_open and ser.in_waiting > 0:
-                    raw = ser.readline().decode("utf-8", errors="ignore").strip()
-                    # Only process complete JSON lines — skip boot messages and partial lines
-                    if raw and raw.startswith("{") and raw.endswith("}"):
-                        _parse(raw)
+            # Read without holding any lock — serial reads are thread-safe on Pi
+            if ser and ser.is_open and ser.in_waiting > 0:
+                raw = ser.readline().decode("utf-8", errors="ignore").strip()
+                if raw and raw.startswith("{") and raw.endswith("}"):
+                    _parse(raw)
         except Exception as e:
             print(f"[Read] {e}")
             state["connected"] = False
@@ -229,9 +228,10 @@ def _trigger_motor_auto():
 def send_cmd(cmd: dict) -> bool:
     global ser
     try:
-        with serial_lock:
+        with write_lock:
             if ser and ser.is_open:
                 ser.write((json.dumps(cmd) + "\n").encode("utf-8"))
+                ser.flush()
                 return True
     except Exception as e:
         print(f"[Write] {e}")
